@@ -17,11 +17,11 @@ public class MainActivity extends Activity {
     ScrollView scroll=new ScrollView(this);
     root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(22,25,22,25);
     scroll.addView(root);setContentView(scroll);
-    title("TV Remote · диагностика v0.2");
+    title("TV Remote · диагностика v0.3");
     status=new TextView(this);status.setTextSize(15);root.addView(status);
     status.setText(ir!=null && ir.hasIrEmitter()?"ИК-передатчик обнаружен":"ИК-передатчик не обнаружен");
     title("Samsung UE42F5020AK · проверка ИК");
-    info("Сначала проверьте TV питание и громкость. Вариант A — стандартный порядок Samsung, B — альтернативный порядок битов.");
+    info("Сначала проверьте TV питание и громкость. Вариант A — NEC: байты по порядку, биты младшими вперёд. B — старый вариант для сравнения.");
     button("TV питание · A",()->sendSamsung(0x40, false));
     button("TV громкость + · A",()->sendSamsung(0xE0, false));
     button("TV громкость − · A",()->sendSamsung(0xD0, false));
@@ -41,15 +41,21 @@ public class MainActivity extends Activity {
   private void button(String s,Runnable r){Button b=new Button(this);b.setText(s);b.setAllCaps(false);root.addView(b);b.setOnClickListener(v->r.run());}
   private void sendSamsung(int cmd, boolean reverseBits){
     int code=(0xE0E0<<16) | ((cmd&255)<<8) | ((~cmd)&255);
-    sendNec(code, reverseBits, "Samsung " + (reverseBits ? "B" : "A"));
+    sendNec(code, reverseBits ? 1 : 2, "Samsung " + (reverseBits ? "B" : "A"));
   }
   private void sendT95(int cmd){ // Hypothesis only: 0x02FE + command + complement
-    int code=(0x02FE<<16) | ((cmd&255)<<8) | ((~cmd)&255);sendNec(code, false, "T95 гипотеза");
+    int code=(0x02FE<<16) | ((cmd&255)<<8) | ((~cmd)&255);sendNec(code, 2, "T95 гипотеза");
   }
-  private void sendNec(int code, boolean reverseBits, String label){
+  private void sendNec(int code, int mode, String label){
     if(ir==null||!ir.hasIrEmitter()){status.setText("Нет доступного ИК-передатчика");return;}
     int[] pulses=new int[67];pulses[0]=9000;pulses[1]=4500;
-    for(int i=0;i<32;i++){pulses[2+i*2]=560;pulses[3+i*2]=((code >>> (reverseBits ? i : (31-i)))&1)==1?1690:560;}
+    for(int i=0;i<32;i++){
+      int shift;
+      if(mode==2) shift=8*(3-i/8)+(i%8); // NEC: bytes in written order, LSB first within each byte
+      else shift=i; // Previous diagnostic variant
+      pulses[2+i*2]=560;
+      pulses[3+i*2]=((code >>> shift)&1)==1?1690:560;
+    }
     pulses[66]=560;
     try {ir.transmit(38000,pulses);status.setText(String.format("%s: передан код %08X (38 кГц)",label,code));}
     catch(Exception e){status.setText("Ошибка ИК: "+e.getMessage());}
