@@ -17,14 +17,18 @@ public class MainActivity extends Activity {
     ScrollView scroll=new ScrollView(this);
     root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(22,25,22,25);
     scroll.addView(root);setContentView(scroll);
-    title("TV Remote · диагностическая версия");
+    title("TV Remote · диагностика v0.2");
     status=new TextView(this);status.setTextSize(15);root.addView(status);
     status.setText(ir!=null && ir.hasIrEmitter()?"ИК-передатчик обнаружен":"ИК-передатчик не обнаружен");
-    title("Samsung UE42F5020AK · тестовые NEC-коды");
-    button("TV питание",()->sendSamsung(0x02));
-    button("TV громкость +",()->sendSamsung(0x07));
-    button("TV громкость −",()->sendSamsung(0x0B));
-    button("TV Mute",()->sendSamsung(0x0F));
+    title("Samsung UE42F5020AK · проверка ИК");
+    info("Сначала проверьте TV питание и громкость. Вариант A — стандартный порядок Samsung, B — альтернативный порядок битов.");
+    button("TV питание · A",()->sendSamsung(0x40, false));
+    button("TV громкость + · A",()->sendSamsung(0xE0, false));
+    button("TV громкость − · A",()->sendSamsung(0xD0, false));
+    button("TV Mute · A",()->sendSamsung(0xF0, false));
+    button("TV питание · B",()->sendSamsung(0x40, true));
+    button("TV громкость + · B",()->sendSamsung(0xE0, true));
+    button("TV громкость − · B",()->sendSamsung(0xD0, true));
     title("T95 W2 · экспериментальные коды");
     info("Коды из обсуждения CoreELEC не содержат полной формы ИК-сигнала. Ниже — гипотеза NEC с адресом 0x02FE. Команды могут не работать. Тестируйте, направляя ИК-порт телефона на приставку.");
     button("Вверх",()->sendT95(0x16));button("Вниз",()->sendT95(0x1A));
@@ -35,18 +39,19 @@ public class MainActivity extends Activity {
   private void title(String s){TextView t=new TextView(this);t.setText(s);t.setTextColor(Color.rgb(20,50,80));t.setTextSize(21);t.setPadding(0,18,0,10);root.addView(t);}
   private void info(String s){TextView t=new TextView(this);t.setText(s);t.setTextSize(14);t.setPadding(0,8,0,12);root.addView(t);}
   private void button(String s,Runnable r){Button b=new Button(this);b.setText(s);b.setAllCaps(false);root.addView(b);b.setOnClickListener(v->r.run());}
-  private void sendSamsung(int cmd){ // Samsung NEC-like 32-bit: address 0xE0E0 + command byte + inverted byte
-    int code=(0xE0E0<<16) | ((cmd&255)<<8) | ((~cmd)&255);sendNecMsb(code);
+  private void sendSamsung(int cmd, boolean reverseBits){
+    int code=(0xE0E0<<16) | ((cmd&255)<<8) | ((~cmd)&255);
+    sendNec(code, reverseBits, "Samsung " + (reverseBits ? "B" : "A"));
   }
   private void sendT95(int cmd){ // Hypothesis only: 0x02FE + command + complement
-    int code=(0x02FE<<16) | ((cmd&255)<<8) | ((~cmd)&255);sendNecMsb(code);
+    int code=(0x02FE<<16) | ((cmd&255)<<8) | ((~cmd)&255);sendNec(code, false, "T95 гипотеза");
   }
-  private void sendNecMsb(int code){
+  private void sendNec(int code, boolean reverseBits, String label){
     if(ir==null||!ir.hasIrEmitter()){status.setText("Нет доступного ИК-передатчика");return;}
     int[] pulses=new int[67];pulses[0]=9000;pulses[1]=4500;
-    for(int i=0;i<32;i++){pulses[2+i*2]=560;pulses[3+i*2]=((code >>> (31-i))&1)==1?1690:560;}
+    for(int i=0;i<32;i++){pulses[2+i*2]=560;pulses[3+i*2]=((code >>> (reverseBits ? i : (31-i)))&1)==1?1690:560;}
     pulses[66]=560;
-    try {ir.transmit(38000,pulses);status.setText(String.format("Отправлен экспериментальный код: %08X",code));}
+    try {ir.transmit(38000,pulses);status.setText(String.format("%s: передан код %08X (38 кГц)",label,code));}
     catch(Exception e){status.setText("Ошибка ИК: "+e.getMessage());}
   }
 }
